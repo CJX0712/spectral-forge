@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>谱聚类实验室 · Spectral Clustering Lab</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --ink:#1f2328; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#2563eb; --accent2:#0ea5e9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+  header h1{margin:0;font-size:18px;font-weight:700}
+  header p{margin:4px 0 0;color:var(--muted);font-size:12px}
+  .layout{display:flex;gap:16px;padding:16px;align-items:flex-start}
+  .controls{flex:0 0 240px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:16px;position:sticky;top:16px}
+  .controls h2{font-size:13px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .row{margin-bottom:12px}
+  .row label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .row input,.row select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;
+    background:#fff;color:var(--ink);font-size:13px}
+  .row .val{float:right;color:var(--accent);font-variant-numeric:tabular-nums}
+  button{width:100%;padding:9px;border:0;border-radius:8px;background:var(--accent);color:#fff;
+    font-size:13px;font-weight:600;cursor:pointer;margin-top:4px}
+  button.alt{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  button:active{transform:translateY(1px)}
+  main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:16px;min-width:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card.full{grid-column:1 / -1}
+  .card h3{margin:0 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  canvas{width:100%;height:auto;display:block;border-radius:8px;background:#fbfcfe}
+  #stats{font-size:13px}
+  #stats table{width:100%;border-collapse:collapse}
+  #stats td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  #stats td:first-child{color:var(--muted);width:38%}
+  #stats code{background:#eef2ff;color:#3730a3;padding:1px 5px;border-radius:5px;font-size:12px}
+  .badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600}
+  .ok{background:#dcfce7;color:#166534}.warn{background:#fef9c3;color:#854d0e}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--muted)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+</style>
+</head>
+<body>
+<header>
+  <h1>谱聚类实验室 · Spectral Clustering Lab</h1>
+  <p>顶级无监督学习：归一化拉普拉斯 + Lanczos 三对角化 + k-means 嵌入聚类 · 纯前端零依赖 · 作者 晨星</p>
+</header>
+
+<div class="layout">
+  <aside class="controls">
+    <h2>数据集</h2>
+    <div class="row">
+      <label>形状</label>
+      <select id="dataset">
+        <option value="blobs">高斯团 (Blobs)</option>
+        <option value="rings">同心环 (Rings)</option>
+        <option value="moons">双月 (Moons)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>样本数 n <span class="val" id="nVal">200</span></label>
+      <input id="n" type="range" min="40" max="400" step="10" value="200">
+    </div>
+    <div class="row">
+      <label>簇数 k <span class="val" id="kVal">3</span></label>
+      <input id="k" type="range" min="2" max="6" step="1" value="3">
+    </div>
+    <div class="row">
+      <label>核宽 σ <span class="val" id="sigVal">1.00</span></label>
+      <input id="sigma" type="range" min="0.05" max="2" step="0.05" value="1.00">
+    </div>
+    <div class="row">
+      <label>随机种子 <span class="val" id="seedVal">1</span></label>
+      <input id="seed" type="range" min="1" max="999" step="1" value="1">
+    </div>
+    <button id="run">▶ 运行聚类</button>
+    <button id="rand" class="alt">🎲 随机种子</button>
+  </aside>
+
+  <main>
+    <div class="card">
+      <h3>原始散点（按预测簇着色）</h3>
+      <canvas id="scatter" width="420" height="320"></canvas>
+    </div>
+    <div class="card">
+      <h3>谱嵌入（前 2 个特征向量）</h3>
+      <canvas id="embed" width="420" height="320"></canvas>
+    </div>
+    <div class="card">
+      <h3>拉普拉斯谱（最小 k 个特征值）</h3>
+      <canvas id="spectrum" width="420" height="220"></canvas>
+    </div>
+    <div class="card">
+      <h3>统计</h3>
+      <div id="stats"><table><tr><td>状态</td><td>点击「运行聚类」</td></tr></table></div>
+    </div>
+    <div class="card full">
+      <div class="legend" id="legend"></div>
+    </div>
+  </main>
+</div>
+
+<script id="engine">
+(function(){
+  'use strict';
+  // ---------- RNG ----------
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(rng){
+    var u=0,v=0;
+    while(u===0)u=rng(); while(v===0)v=rng();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  }
+  // ---------- datasets (with ground-truth labels) ----------
+  function blobs(n,k,noise,seed){
+    var rng=mulberry32(seed||12345), pts=[], labels=[], centers=[];
+    for(var c=0;c<k;c++) centers.push([(rng()*2-1)*5,(rng()*2-1)*5]);
+    for(var i=0;i<n;i++){
+      var c=Math.floor(rng()*k);
+      pts.push([centers[c][0]+gauss(rng)*noise, centers[c][1]+gauss(rng)*noise]);
+      labels.push(c);
+    }
+    return {points:pts, labels:labels};
+  }
+  function rings(n,seed){
+    var rng=mulberry32(seed||12345), pts=[], labels=[];
+    for(var i=0;i<n;i++){
+      var c=i%2, r=c===0?1:3, a=rng()*2*Math.PI;
+      pts.push([r*Math.cos(a)+(rng()*2-1)*0.08, r*Math.sin(a)+(rng()*2-1)*0.08]);
+      labels.push(c);
+    }
+    return {points:pts, labels:labels};
+  }
+  function moons(n,seed){
+    var rng=mulberry32(seed||12345), pts=[], labels=[];
+    for(var i=0;i<n;i++){
+      var c=i%2, t=rng()*Math.PI;
+      if(c===0) pts.push([Math.cos(t),Math.sin(t)]);
+      else pts.push([1-Math.cos(t), 0.5-Math.sin(t)]);
+      labels.push(c);
+    }
+    return {points:pts, labels:labels};
+  }
+  // ---------- linear algebra ----------
+  function matVec(A,v){
+    var n=A.length, m=v.length, out=new Array(n).fill(0);
+    for(var i=0;i<n;i++){var s=0,Ai=A[i];for(var j=0;j<m;j++)s+=Ai[j]*v[j];out[i]=s;}
+    return out;
+  }
+  function dot(a,b){var s=0;for(var i=0;i<a.length;i++)s+=a[i]*b[i];return s;}
+  function scale(a,s){return a.map(function(x){return x*s;});}
+  function sub(a,b){return a.map(function(x,i){return x-b[i];});}
+  function add(a,b){return a.map(function(x,i){return x+b[i];});}
+  function norm(a){return Math.sqrt(dot(a,a));}
+  function dist2(a,b){var s=0;for(var i=0;i<a.length;i++){var d=a[i]-b[i];s+=d*d;}return s;}
+  // ---------- affinity + laplacian ----------
+  function rbfAffinity(points,sigma){
+    var n=points.length, A=[], s2=2*sigma*sigma, i, j;
+    for(i=0;i<n;i++)A.push(new Array(n).fill(0));
+    for(i=0;i<n;i++)for(j=i+1;j<n;j++){
+      var dx=points[i][0]-points[j][0], dy=points[i][1]-points[j][1];
+      var w=Math.exp(-(dx*dx+dy*dy)/s2);
+      A[i][j]=w; A[j][i]=w;
+    }
+    return A;
+  }
+  function degrees(A){
+    var n=A.length, d=new Array(n).fill(0), i, j;
+    for(i=0;i<n;i++)for(j=0;j<n;j++)d[i]+=A[i][j];
+    return d;
+  }
+  function normalizedLaplacian(A){
+    var n=A.length, d=degrees(A), L=[], i, j;
+    for(i=0;i<n;i++)L.push(new Array(n).fill(0));
+    for(i=0;i<n;i++){
+      var idi=1/Math.sqrt(d[i]);
+      for(j=0;j<n;j++){
+        var v=(i===j?1:0)-idi*(1/Math.sqrt(d[j]))*A[i][j];
+        L[i][j]=v;
+      }
+    }
+    return L;
+  }
+  // ---------- Lanczos (largest eigenpairs of symmetric M) ----------
+  function lanczos(M,m){
+    var n=M.length, v0=new Array(n).fill(1/Math.sqrt(n));
+    var alpha=new Array(m).fill(0), beta=new Array(m).fill(0);
+    var V=[]; for(var i=0;i<m;i++)V.push(new Array(n).fill(0));
+    var vPrev=new Array(n).fill(0), v=v0.slice(), j, r;
+    var steps=0;
+    for(j=0;j<m;j++){
+      V[j]=v.slice();
+      var w=matVec(M,v);
+      var a=dot(w,v); alpha[j]=a;
+      w=sub(w,scale(v,a));
+      w=sub(w,scale(vPrev,beta[j>0?j-1:0]));
+      for(r=0;r<=j;r++){var p=dot(w,V[r]);w=sub(w,scale(V[r],p));} // full re-orth
+      var b=norm(w);
+      beta[j]=b; steps++;
+      if(b<1e-12){ v=new Array(n).fill(0); break; }
+      vPrev=v.slice(); v=scale(w,1/b);
+    }
+    var T=[]; for(var i=0;i<m;i++)T.push(new Array(m).fill(0));
+    for(var i=0;i<m;i++){T[i][i]=alpha[i];if(i>0){T[i][i-1]=beta[i-1];T[i-1][i]=beta[i-1];}}
+    return {V:V,T:T,beta:beta,steps:steps};
+  }
+  // ---------- Jacobi eigensolver (symmetric, dense) ----------
+  function jacobiEig(S){
+    var n=S.length, A=S.map(function(r){return r.slice();}), V=[], i, j, k;
+    for(i=0;i<n;i++){V.push(new Array(n).fill(0));V[i][i]=1;}
+    for(var iter=0;iter<200*n*n;iter++){
+      var p=0,q=1,max=0;
+      for(i=0;i<n;i++)for(j=i+1;j<n;j++){if(Math.abs(A[i][j])>max){max=Math.abs(A[i][j]);p=i;q=j;}}
+      if(max<1e-12)break;
+      var app=A[p][p],aqq=A[q][q],apq=A[p][q];
+      var phi=0.5*Math.atan2(2*apq,aqq-app), c=Math.cos(phi), s=Math.sin(phi);
+      for(k=0;k<n;k++){var akp=A[k][p],akq=A[k][q];A[k][p]=c*akp-s*akq;A[k][q]=s*akp+c*akq;}
+      for(k=0;k<n;k++){var apk=A[p][k],aqk=A[q][k];A[p][k]=c*apk-s*aqk;A[q][k]=s*apk+c*aqk;}
+      for(k=0;k<n;k++){var vkp=V[k][p],vkq=V[k][q];V[k][p]=c*vkp-s*vkq;V[k][q]=s*vkp+c*vkq;}
+    }
+    var values=[];for(i=0;i<n;i++)values.push(A[i][i]);
+    var idx=values.map(function(v,i){return i;});
+    idx.sort(function(a,b){return values[b]-values[a];});
+    var vals=idx.map(function(i){return values[i];});
+    // eigenvectors are COLUMNS of V; sorted eigenvalue jj lives at diagonal position idx[jj]
+    var vecs=[];
+    for(var jj=0;jj<n;jj++){
+      var col=idx[jj], vec=new Array(n);
+      for(var p=0;p<n;p++) vec[p]=V[p][col];
+      vecs.push(vec);
+    }
+    return {values:vals, vectors:vecs};
+  }
+  // Ritz pairs of M via Lanczos + Jacobi on T
+  function lanczosEig(M,m){
+    var r=lanczos(M,m), je=jacobiEig(r.T), vecs=[], j, s, p;
+    for(j=0;j<m;j++){
+      var u=je.vectors[j], rv=new Array(M.length).fill(0);
+      for(s=0;s<m;s++){var Vs=r.V[s],us=u[s];for(p=0;p<M.length;p++)rv[p]+=Vs[p]*us;}
+      vecs.push(rv);
+    }
+    return {values:je.values, vectors:vecs, raw:r};
+  }
+  function lanczosResidual(M,r){
+    var m=r.T.length, n=M.length;
+    var MV=r.V.map(function(col){return matVec(M,col);});
+    var VT=[]; for(var p=0;p<n;p++)VT.push(new Array(m).fill(0));
+    for(var s=0;s<m;s++)for(var pp=0;pp<m;pp++){var t=r.T[s][pp];if(t!==0){var Vs=r.V[s];for(var q=0;q<n;q++)VT[q][pp]+=Vs[q]*t;}}
+    var fres=0;
+    for(var pp=0;pp<m;pp++)for(var q=0;q<n;q++){var dff=MV[pp][q]-VT[q][pp];fres+=dff*dff;}
+    return Math.sqrt(fres);
+  }
+  // ---------- k-means++ (deterministic given seed) ----------
+  function kmeans(X,k,seed,iters){
+    iters=iters||60; var n=X.length, dim=X[0].length, rng=mulberry32(seed), cents=[], i, c;
+    cents.push(X[Math.floor(rng()*n)].slice());
+    while(cents.length<k){
+      var dists=new Array(n).fill(Infinity);
+      for(i=0;i<n;i++)for(c=0;c<cents.length;c++){var dd=dist2(X[i],cents[c]);if(dd<dists[i])dists[i]=dd;}
+      var sum=0;for(i=0;i<n;i++)sum+=dists[i];
+      var t=rng()*sum, acc=0, idx=0;
+      for(i=0;i<n;i++){acc+=dists[i];if(acc>=t){idx=i;break;}}
+      cents.push(X[idx].slice());
+    }
+    var labels=new Array(n).fill(0);
+    for(var it=0;it<iters;it++){
+      for(i=0;i<n;i++){var best=0,bd=Infinity;for(c=0;c<k;c++){var d=dist2(X[i],cents[c]);if(d<bd){bd=d;best=c;}}labels[i]=best;}
+      var sumc=cents.map(function(){return new Array(dim).fill(0);}), cnt=new Array(k).fill(0);
+      for(i=0;i<n;i++){var cc=labels[i];cnt[cc]++;for(var j=0;j<dim;j++)sumc[cc][j]+=X[i][j];}
+      var moved=false;
+      for(c=0;c<k;c++){
+        if(cnt[c]===0){cents[c]=X[Math.floor(rng()*n)].slice();moved=true;continue;}
+        for(var j=0;j<dim;j++){var nv=sumc[c][j]/cnt[c];if(Math.abs(nv-cents[c][j])>1e-9)moved=true;cents[c][j]=nv;}
+      }
+      if(!moved)break;
+    }
+    return {labels:labels, centroids:cents};
+  }
+  // best permutation accuracy (k! brute, k<=6)
+  function bestAccuracy(truth,pred,k){
+    var perms=[[0]], res=0, used=[], out=[];
+    function gen(rem){ if(rem.length===k){perms.push(rem.slice());return;} for(var i=0;i<k;i++){if(used[i])continue;used[i]=true;rem.push(i);gen(rem);rem.pop();used[i]=false;} }
+    used=new Array(k).fill(false); gen([]);
+    for(var pi=0;pi<perms.length;pi++){
+      var map=perms[pi], hit=0;
+      for(var i=0;i<truth.length;i++) if(map[pred[i]]===truth[i]) hit++;
+      if(hit>res)res=hit;
+    }
+    return res/truth.length;
+  }
+  // ---------- spectral clustering pipeline ----------
+  function cluster(points,cfg){
+    cfg=cfg||{};
+    var k=cfg.k||2, sigma=cfg.sigma||0.3, seed=cfg.seed||1;
+    var n=points.length, nEig=k, m=cfg.lanczosSteps||Math.min(n,80);
+    if(m>n)m=n; if(m<k+2)m=k+2;
+    var A=rbfAffinity(points,sigma);
+    var L=normalizedLaplacian(A);
+    var M=L.map(function(row,i){return row.map(function(v,j){return (i===j?2:0)-v;});});
+    var le=lanczosEig(M,m);
+    var eigL=le.values.map(function(v){return 2-v;}); // ascending: smallest L first
+    var embed=[];
+    for(var i=0;i<n;i++){var row=[];for(var e=0;e<nEig;e++)row.push(le.vectors[e][i]);embed.push(row);}
+    for(var i=0;i<n;i++){var nn=norm(embed[i])||1e-12; embed[i]=embed[i].map(function(x){return x/nn;});}
+    var km=kmeans(embed,k,seed,80);
+    return {labels:km.labels, eigL:eigL, embed:embed, A:A, L:L, d:degrees(A)};
+  }
+  function generate(name,n,k,seed){
+    if(name==='rings')return rings(n,seed);
+    if(name==='moons')return moons(n,seed);
+    return blobs(n,k,0.3,seed);
+  }
+  // ---------- expose ----------
+  globalThis.SPEC={
+    mulberry32:mulberry32, gauss:gauss,
+    blobs:blobs, rings:rings, moons:moons, generate:generate,
+    rbfAffinity:rbfAffinity, degrees:degrees, normalizedLaplacian:normalizedLaplacian,
+    lanczos:lanczos, lanczosEig:lanczosEig, lanczosResidual:lanczosResidual,
+    jacobiEig:jacobiEig, kmeans:kmeans, bestAccuracy:bestAccuracy, cluster:cluster
+  };
+})();
+</script>
+
+<script id="ui">
+(function(){
+  if (typeof document === "undefined") return;
+  var S=globalThis.SPEC;
+  var PALETTE=['#2563eb','#ef4444','#10b981','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#64748b'];
+  function $(id){return document.getElementById(id);}
+  function setup(){
+    ['n','k','sigma','seed'].forEach(function(key){
+      var el=$(key); var lab=$(key+'Val');
+      el.addEventListener('input',function(){ lab.textContent = key==='sigma'? (+el.value).toFixed(2) : el.value; });
+    });
+    $('run').addEventListener('click',run);
+    $('rand').addEventListener('click',function(){ var s=1+Math.floor(Math.random()*998); $('seed').value=s; $('seedVal').textContent=s; run(); });
+    var DEFSIG={blobs:1.0, rings:0.35, moons:0.12};
+    $('dataset').addEventListener('change',function(){
+      var s=DEFSIG[this.value]; $('sigma').value=s; $('sigVal').textContent=(+s).toFixed(2);
+    });
+    run();
+  }
+  function run(){
+    var name=$('dataset').value, n=+$('n').value, k=+$('k').value, sigma=+$('sigma').value, seed=+$('seed').value;
+    var data=S.generate(name,n,k,seed);
+    var pts=data.points;
+    var t0=(typeof performance!=='undefined'?performance.now():Date.now());
+    var res=S.cluster(pts,{k:k,sigma:sigma,seed:seed});
+    var t1=(typeof performance!=='undefined'?performance.now():Date.now());
+    var acc=data.labels? S.bestAccuracy(data.labels,res.labels,k) : null;
+    drawScatter($('scatter'),pts,res.labels,k);
+    drawEmbed($('embed'),res.embed,k);
+    drawSpectrum($('spectrum'),res.eigL,k);
+    $('legend').innerHTML = res.labels ? legendHtml(k) : '';
+    var eigTxt=res.eigL.slice(0,k).map(function(v,i){return '<code>λ'+(i+1)+'='+v.toFixed(4)+'</code>';}).join(' ');
+    var rows=[
+      ['样本 / 簇', n+' / '+k],
+      ['核宽 σ', sigma.toFixed(2)],
+      ['最小 '+k+' 个特征值', eigTxt],
+      ['谱间隙 λ₂−λ₁', (res.eigL[1]-res.eigL[0]).toFixed(4)],
+      ['忠实度(对照真值)', acc===null?'—':(acc*100).toFixed(1)+'% <span class="badge '+(acc>0.9?'ok':'warn')+'">'+(acc>0.9?'PASS':'LOW')+'</span>'],
+      ['耗时', (t1-t0).toFixed(1)+' ms']
+    ];
+    $('stats').innerHTML='<table>'+rows.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>';
+  }
+  function legendHtml(k){var h='';for(var i=0;i<k;i++)h+='<span><i style="background:'+PALETTE[i%PALETTE.length]+'"></i>簇 '+(i+1)+'</span>';return h;}
+  function fit(canvas,pad){pad=pad||24; var w=canvas.width,h=canvas.height; return {w:w,h:h,pad:pad};}
+  function drawScatter(canvas,pts,labels,k){
+    var g=canvas.getContext('2d'), w=canvas.width,h=canvas.height,pad=24;
+    g.clearRect(0,0,w,h); g.fillStyle='#fbfcfe'; g.fillRect(0,0,w,h);
+    var xs=pts.map(function(p){return p[0];}), ys=pts.map(function(p){return p[1];});
+    var minx=Math.min.apply(null,xs),maxx=Math.max.apply(null,xs),miny=Math.min.apply(null,ys),maxy=Math.max.apply(null,ys);
+    var sx=function(x){return pad+(x-minx)/((maxx-minx)||1)*(w-2*pad);};
+    var sy=function(y){return h-pad-(y-miny)/((maxy-miny)||1)*(h-2*pad);};
+    for(var i=0;i<pts.length;i++){
+      g.beginPath(); g.fillStyle=PALETTE[labels[i]%PALETTE.length];
+      g.arc(sx(pts[i][0]),sy(pts[i][1]),3.2,0,2*Math.PI); g.fill();
+    }
+    axis(g,w,h,pad);
+  }
+  function drawEmbed(canvas,embed,k){
+    var g=canvas.getContext('2d'), w=canvas.width,h=canvas.height,pad=24;
+    g.clearRect(0,0,w,h); g.fillStyle='#fbfcfe'; g.fillRect(0,0,w,h);
+    var xs=embed.map(function(e){return e[0];}), ys=embed.map(function(e){return e[1]||0;});
+    var ax=Math.max.apply(null,xs.map(Math.abs))||1, ay=Math.max.apply(null,ys.map(Math.abs))||1;
+    var sx=function(x){return w/2+x/ax*(w/2-pad);};
+    var sy=function(y){return h/2-y/ay*(h/2-pad);};
+    // cross
+    g.strokeStyle='#e5e7eb'; g.beginPath(); g.moveTo(pad, h/2); g.lineTo(w-pad,h/2); g.moveTo(w/2,pad); g.lineTo(w/2,h-pad); g.stroke();
+    for(var i=0;i<embed.length;i++){
+      g.beginPath(); g.fillStyle=PALETTE[i%PALETTE.length];
+      g.arc(sx(embed[i][0]),sy(embed[i][1]||0),2.6,0,2*Math.PI); g.fill();
+    }
+  }
+  function drawSpectrum(canvas,eigL,k){
+    var g=canvas.getContext('2d'), w=canvas.width,h=canvas.height,pad=28;
+    g.clearRect(0,0,w,h); g.fillStyle='#fbfcfe'; g.fillRect(0,0,w,h);
+    var top=Math.min(k,eigL.length), maxv=Math.max.apply(null,eigL.slice(0,top))||1;
+    var bw=(w-2*pad)/top;
+    for(var i=0;i<top;i++){
+      var bh=eigL[i]/maxv*(h-2*pad);
+      g.fillStyle=PALETTE[i%PALETTE.length];
+      g.fillRect(pad+i*bw+3, h-pad-bh, bw-6, bh);
+      g.fillStyle='#6b7280'; g.font='11px sans-serif'; g.textAlign='center';
+      g.fillText(eigL[i].toFixed(3), pad+i*bw+bw/2, h-pad+14);
+    }
+    g.fillStyle='#9ca3af'; g.textAlign='left'; g.fillText('最小特征值 (应见 λ₁≈0, 之后出现谱间隙)',pad,16);
+  }
+  function axis(g,w,h,pad){
+    g.strokeStyle='#e5e7eb'; g.beginPath(); g.moveTo(pad,pad); g.lineTo(pad,h-pad); g.lineTo(w-pad,h-pad); g.stroke();
+  }
+  if (typeof document!=='undefined'){ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',setup); else setup(); }
+})();
+</script>
+</body>
+</html>
