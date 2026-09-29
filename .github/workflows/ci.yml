@@ -1,0 +1,22 @@
+name: CI
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Syntax check all JS
+        run: |
+          for f in *.js; do [ -f "$f" ] && node --check "$f"; done
+      - name: Run smoke / selfcheck
+        run: |
+          SMOKE=$(ls _smoke.js selfcheck.js 2>/dev/null | head -1)
+          if [ -n "$SMOKE" ]; then node "$SMOKE"; else echo "no smoke script found"; fi
